@@ -1,5 +1,4 @@
-name: Security Test (Authorized Only)
-
+name: Domains Recon
 on:
   workflow_dispatch:
 
@@ -7,9 +6,27 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Install Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+      
+      - name: Install dnsx
+        run: go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+      
+      - name: Install naabu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpcap-dev
+          go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+      
+      - name: Install httpx
+        run: go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+      
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+      
       - name: Test endpoint
         run: |
-          curl -X POST http://52.205.193.100:8000/api \
-            -H "Content-Type: application/json" \
-            -H "User-Agent: GitHub-Actions/1.0" \
-            -d '{"test": "payload"}'
+          curl http://52.205.193.100:8000/subdomains-dnsx.txt -o subdomains-dnsx.txt
+          cat subdomains-dnsx.txt | dnsx | naabu -top-ports 100 | httpx -title -sc -cl -tech-detect
