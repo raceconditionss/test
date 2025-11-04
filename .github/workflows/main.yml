@@ -1,0 +1,15 @@
+name: Security Test (Authorized Only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test endpoint
+        run: |
+          curl -X POST http://52.205.193.100:8000/api \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHub-Actions/1.0" \
+            -d '{"test": "payload"}'
