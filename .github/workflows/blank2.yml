@@ -1,0 +1,60 @@
+name: Rate Limit Bypass
+on:
+  workflow_dispatch:
+
+jobs:
+  distributed-attack:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      max-parallel: 10
+    steps:
+      - name: Install tools
+        run: |
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+      
+      - name: Fetch domain list from remote server
+        run: |
+          echo "=== Fetching domains from 54.196.248.72:9999 ==="
+          curl -s http://54.196.248.72:9999/domains.txt -o domains.txt
+          
+          # Verifica se o arquivo foi baixado
+          if [ ! -s domains.txt ]; then
+            echo "Error: Failed to fetch domains or file is empty"
+            exit 1
+          fi
+          
+          echo "Domains fetched successfully:"
+          cat domains.txt
+      
+      - name: Distributed requests with IP rotation
+        run: |
+          echo "=== Runner ${{ matrix.instance }} ==="
+          # httpx com output customizado: apenas status code e content-length
+          cat domains.txt | httpx \
+            -silent \
+            -status-code \
+            -content-length \
+            -no-color \
+            -threads 5 \
+            -rate-limit 10 \
+            -timeout 10 \
+            -retries 2 \
+            -mc 200,201,202,203,204,301,302,400,401,403,404,500,502,503 \
+            -o results-${{ matrix.instance }}.txt
+          
+          echo "Results from Runner ${{ matrix.instance }}:"
+          cat results-${{ matrix.instance }}.txt
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        with:
+          name: scan-results-${{ matrix.instance }}
+          path: results-${{ matrix.instance }}.txt
+      
+      - name: Summary
+        run: |
+          echo "Total domains scanned: $(wc -l < domains.txt)"
+          echo "Results found: $(wc -l < results-${{ matrix.instance }}.txt)"
