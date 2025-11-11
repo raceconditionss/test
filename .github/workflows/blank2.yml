@@ -18,21 +18,34 @@ jobs:
       - name: Fetch domain list from remote server
         run: |
           echo "=== Fetching domains from 54.196.248.72:9999 ==="
-          curl -s http://54.196.248.72:9999 -o domains.txt
+          curl -s http://54.196.248.72:9999/domains.txt -o domains.txt
           
-          # Verifica se o arquivo foi baixado
+          # Se não funcionar com /domains.txt, tenta pegar direto
           if [ ! -s domains.txt ]; then
-            echo "Error: Failed to fetch domains or file is empty"
+            echo "Trying root path..."
+            curl -s http://54.196.248.72:9999 -o domains.txt
+          fi
+          
+          # Remove linhas HTML caso existam
+          grep -E '^https?://' domains.txt > clean_domains.txt || cp domains.txt clean_domains.txt
+          mv clean_domains.txt domains.txt
+          
+          # Verifica se o arquivo tem conteúdo válido
+          if [ ! -s domains.txt ]; then
+            echo "Error: No valid domains found"
             exit 1
           fi
           
-          echo "Domains fetched successfully:"
+          echo "Domains to scan:"
           cat domains.txt
+          echo "---"
+          echo "Total domains: $(wc -l < domains.txt)"
       
       - name: Distributed requests with IP rotation
         run: |
           echo "=== Runner ${{ matrix.instance }} ==="
-          # httpx com output customizado: apenas status code e content-length
+          
+          # httpx lendo da STDIN
           cat domains.txt | httpx \
             -silent \
             -status-code \
@@ -43,9 +56,12 @@ jobs:
             -timeout 10 \
             -retries 2 \
             -mc 200,201,202,203,204,301,302,400,401,403,404,500,502,503 \
-            -o results-${{ matrix.instance }}.txt
+            -no-fallback \
+            -no-fallback-scheme \
+            | tee results-${{ matrix.instance }}.txt
           
-          echo "Results from Runner ${{ matrix.instance }}:"
+          echo ""
+          echo "=== Summary Runner ${{ matrix.instance }} ==="
           cat results-${{ matrix.instance }}.txt
       
       - name: Upload results
@@ -54,7 +70,7 @@ jobs:
           name: scan-results-${{ matrix.instance }}
           path: results-${{ matrix.instance }}.txt
       
-      - name: Summary
+      - name: Final Summary
         run: |
           echo "Total domains scanned: $(wc -l < domains.txt)"
-          echo "Results found: $(wc -l < results-${{ matrix.instance }}.txt)"
+          echo "Responses received: $(wc -l < results-${{ matrix.instance }}.txt)"
