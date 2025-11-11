@@ -1,4 +1,4 @@
-name: Rate Limit Bypass
+name: Rate Limit Bypass v2
 on:
   workflow_dispatch:
 
@@ -18,7 +18,7 @@ jobs:
       - name: Fetch domain list from remote server
         run: |
           echo "=== Fetching domains from 54.196.248.72:9999 ==="
-          curl -s http://54.196.248.72:9999/domains.txt -o domains.txt
+          curl -s http://54.196.248.72:9999 -o domains.txt
           
           # Verifica se o arquivo foi baixado
           if [ ! -s domains.txt ]; then
@@ -49,7 +49,7 @@ jobs:
           cat results-${{ matrix.instance }}.txt
       
       - name: Upload results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: scan-results-${{ matrix.instance }}
           path: results-${{ matrix.instance }}.txt
