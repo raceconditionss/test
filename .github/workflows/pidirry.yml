@@ -1,0 +1,173 @@
+name: IP Rotation + Fingerprint Spoofing
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to request'
+        required: true
+        default: 'https://ja4db.com/id/ja4h/'
+      total_requests:
+        description: 'Total requests per runner'
+        required: false
+        default: '10'
+      thermoptic_host:
+        description: 'Thermoptic server (ex: seu-server.com)'
+        required: true
+        default: 'seu-servidor.com'
+      thermoptic_port:
+        description: 'Thermoptic port'
+        required: false
+        default: '1234'
+
+jobs:
+  distributed-requests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Cada runner = IP diferente
+        instance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+      max-parallel: 20  # Free: max 20, Pro: max 60
+    
+    steps:
+      - name: Show runner info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🚀 Runner #${{ matrix.instance }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Real IP: $(curl -s https://api.ipify.org)"
+          echo "Target: ${{ github.event.inputs.target_url }}"
+          echo "Requests: ${{ github.event.inputs.total_requests }}"
+          echo "Proxy: ${{ github.event.inputs.thermoptic_host }}:${{ github.event.inputs.thermoptic_port }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: Test proxy connection
+        run: |
+          echo "Testing Thermoptic proxy..."
+          
+          if curl -s --max-time 10 \
+            --proxy http://${{ secrets.THERMOPTIC_USER }}:${{ secrets.THERMOPTIC_PASS }}@${{ github.event.inputs.thermoptic_host }}:${{ github.event.inputs.thermoptic_port }} \
+            --insecure \
+            http://example.com > /dev/null 2>&1; then
+            echo "✅ Proxy is working!"
+          else
+            echo "❌ Proxy failed!"
+            exit 1
+          fi
+      
+      - name: Make requests with fingerprint spoofing
+        run: |
+          PROXY="http://${{ secrets.THERMOPTIC_USER }}:${{ secrets.THERMOPTIC_PASS }}@${{ github.event.inputs.thermoptic_host }}:${{ github.event.inputs.thermoptic_port }}"
+          TARGET="${{ github.event.inputs.target_url }}"
+          TOTAL="${{ github.event.inputs.total_requests }}"
+          
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎯 Making $TOTAL requests"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          for i in $(seq 1 $TOTAL); do
+            echo ""
+            echo "📤 Request $i/$TOTAL"
+            echo "   Time: $(date '+%H:%M:%S')"
+            
+            # Faz request através do Thermoptic
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              --max-time 30 \
+              --proxy "$PROXY" \
+              --insecure \
+              -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+              "$TARGET")
+            
+            # Separa body e status code
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            STATUS=$(echo "$RESPONSE" | tail -n 1)
+            
+            echo "   Status: $STATUS"
+            echo "   Response: $(echo "$BODY" | head -c 100)..."
+            
+            # Salva resultado
+            echo "Request $i - Status: $STATUS - $(date)" >> results-${{ matrix.instance }}.log
+            echo "$BODY" >> results-${{ matrix.instance }}.txt
+            
+            # Pequeno delay entre requests
+            sleep 1
+          done
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Runner #${{ matrix.instance }} completed!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: Summary
+        run: |
+          TOTAL_MADE=$(wc -l < results-${{ matrix.instance }}.log)
+          SUCCESS=$(grep -c "Status: 200" results-${{ matrix.instance }}.log 2>/dev/null || echo 0)
+          
+          echo "📊 Runner #${{ matrix.instance }} Summary:"
+          echo "   Total requests: $TOTAL_MADE"
+          echo "   Successful (200): $SUCCESS"
+          
+          if [ $TOTAL_MADE -gt 0 ]; then
+            SUCCESS_RATE=$((SUCCESS * 100 / TOTAL_MADE))
+            echo "   Success rate: ${SUCCESS_RATE}%"
+          fi
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-runner-${{ matrix.instance }}
+          path: |
+            results-${{ matrix.instance }}.log
+            results-${{ matrix.instance }}.txt
+
+  # Agrega todos os resultados
+  aggregate:
+    needs: distributed-requests
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+      
+      - name: Aggregate and analyze
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 FINAL RESULTS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Agrega logs
+          find results -name "*.log" -exec cat {} \; > all_requests.log
+          find results -name "*.txt" -exec cat {} \; > all_responses.txt
+          
+          TOTAL=$(wc -l < all_requests.log)
+          SUCCESS=$(grep -c "Status: 200" all_requests.log 2>/dev/null || echo 0)
+          FAILED=$(grep -c "Status: [45]" all_requests.log 2>/dev/null || echo 0)
+          
+          echo "Total requests: $TOTAL"
+          echo "Success (200): $SUCCESS"
+          echo "Failed (4xx/5xx): $FAILED"
+          
+          if [ $TOTAL -gt 0 ]; then
+            SUCCESS_RATE=$((SUCCESS * 100 / TOTAL))
+            echo "Success rate: ${SUCCESS_RATE}%"
+          fi
+          
+          echo ""
+          echo "Status code distribution:"
+          grep -oP 'Status: \K\d+' all_requests.log | sort | uniq -c | sort -rn
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📁 Results saved to artifacts"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: Upload aggregated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: aggregated-results
+          path: |
+            all_requests.log
+            all_responses.txt
