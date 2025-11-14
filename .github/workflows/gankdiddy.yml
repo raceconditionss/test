@@ -56,7 +56,7 @@ jobs:
             if curl -s --max-time 10 \
               --proxy http://github:actions@localhost:1234 \
               --insecure \
-              http://example.com > /dev/null 2>&1; then
+              http://34.227.10.114:9999 > /dev/null 2>&1; then
               echo "✅ Thermoptic ready!"
               break
             fi
