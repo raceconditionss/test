@@ -1,0 +1,31 @@
+name: zika
+on:
+  workflow_dispatch:
+
+jobs:
+  distributed-attack:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      max-parallel: 10
+    
+    steps:
+      - name: Install tools
+        run: |
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+      
+      - name: Show runner info
+        run: |
+          echo "Runner #${{ matrix.instance }}"
+          echo "IP: $(curl -s https://api.ipify.org)"
+      
+      - name: Distributed requests with fingerprint spoofing
+        run: |
+          # Cada runner = IP diferente + fingerprint spoofed via Thermoptic
+          echo "http://34.227.10.114:9999" | httpx \
+            -silent \
+            -status-code \
+            -mc 200,403 \
+            -proxy http://changeme:changeme@0.tcp.sa.ngrok.io:17043
