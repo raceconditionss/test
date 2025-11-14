@@ -11,21 +11,97 @@ jobs:
       max-parallel: 10
     
     steps:
-      - name: Install tools
+      - name: Show runner info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🚀 Runner #${{ matrix.instance }}"
+          echo "Real IP: $(curl -s https://api.ipify.org)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      - name: Install Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose --version
+      
+      - name: Clone and setup Thermoptic
+        run: |
+          git clone https://github.com/mandatoryprogrammer/thermoptic.git
+          cd thermoptic
+          
+          # Configura credenciais
+          cat > docker-compose.override.yml << 'EOF'
+          version: '3.8'
+          services:
+            thermoptic:
+              environment:
+                PROXY_USERNAME: "github"
+                PROXY_PASSWORD: "actions"
+                ENABLE_GUI_CONTROL: "false"
+          EOF
+      
+      - name: Start Thermoptic
+        run: |
+          cd thermoptic
+          docker-compose up -d --build
+          
+          echo "Waiting for Thermoptic to start..."
+          sleep 40
+          
+          # Verifica se está rodando
+          docker-compose ps
+          
+          # Testa proxy
+          for i in {1..15}; do
+            if curl -s --max-time 10 \
+              --proxy http://github:actions@localhost:1234 \
+              --insecure \
+              http://example.com > /dev/null 2>&1; then
+              echo "✅ Thermoptic ready!"
+              break
+            fi
+            echo "Attempt $i/15..."
+            sleep 3
+          done
+      
+      - name: Test fingerprint
+        run: |
+          echo "Testing fingerprint spoofing..."
+          curl -s \
+            --proxy http://github:actions@localhost:1234 \
+            --insecure \
+            https://ja4db.com/id/ja4h/ || echo "JA4 test failed"
+      
+      - name: Install httpx
         run: |
           go install github.com/projectdiscovery/httpx/cmd/httpx@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
       
-      - name: Show runner info
-        run: |
-          echo "Runner #${{ matrix.instance }}"
-          echo "IP: $(curl -s https://api.ipify.org)"
-      
       - name: Distributed requests with fingerprint spoofing
         run: |
-          # Cada runner = IP diferente + fingerprint spoofed via Thermoptic
-          echo "http://34.227.10.114:9999" | httpx \
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎯 Runner #${{ matrix.instance }} attacking..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # Cada runner tem seu próprio Thermoptic = IP diferente
+          echo "target.com" | httpx \
             -silent \
             -status-code \
+            -content-length \
+            -proxy http://github:actions@localhost:1234 \
             -mc 200,403 \
-            -proxy http://changeme:changeme@0.tcp.sa.ngrok.io:17043
+            -no-fallback
+          
+          echo "✅ Runner #${{ matrix.instance }} completed!"
+      
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          cd thermoptic
+          docker-compose logs thermoptic
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          cd thermoptic
+          docker-compose down || true
