@@ -84,7 +84,7 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           
           # Cada runner tem seu próprio Thermoptic = IP diferente
-          echo "target.com" | httpx \
+          echo "http://34.227.10.114:9999" | httpx \
             -silent \
             -status-code \
             -content-length \
